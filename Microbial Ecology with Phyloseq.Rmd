@@ -1,0 +1,1737 @@
+---
+title: "Phyloseq - analysis tools for microbial ecology"
+author: "Vicki Hertzberg"
+date: "10 March 2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+# Microbial Ecology - The Theory
+
+In ecology, scientists collect quantitative data to determine the resemblance between either the objects under study (objects) or the variables describing them (species or other descriptors). The analysis of the association between objects and descriptors is the first step in the analysis. 
+
+There are three main types of association:
+
+- Similarity
+- Distance
+- Dependence
+
+After creating these measures of association, common tasks are to cluster or to ordinate.
+
+To cluster: Sets of objects (or descriptors) can be partitioned into two or more subsets (clusters) using pre-established rules of agglomeration. 
+
+To ordinate: Objects (or descriptors) are represented in a space containing fewer dimensions than the original dataset such that the positions of the objects (or descriptors) with respect to one another may also be used to cluster them. 
+
+# Microbial Ecology - The Practice
+
+As scientists interested in the microbiome, we are now all microbial ecologists. We typically talk about objects as subjects from whom samples have been taken (or even sites within subjects, e.g., oral, vaginal, rectal) while the descriptors are the list of abundances of each species (or other taxonomic classification) found.
+
+So we become interested in how similar subjects are to each other, say, within group i, and how distant they are from, say, group j. Then we might want to know if that distance is associated with some other difference between the groups, for instance, are groups that are closer together in site pH levels also more similar (i.e., less distant).
+
+Other questions of interest: how do sites (or species) cluster together? Also, can you use a multivariate dimensionality reduction technique to describe differences while preserving distances?
+
+Recall if it is appropriate to determine distances between two points with Euclidean distance, the ensuing multidimensional reduction technique is principal component analysis (PCA). If the data are counts then the distance should be calculated in terms of the $\chi^2$ distance, and then the reduction technique is canonical component analysis (CCA). If the distance metrics take on some other value (e.g., dissimilarity), then principal coordinate analysis (PCoA), which is really PCA of the squared distance matrix.  
+
+These are the types of questions that we can use `phyloseq` to address with our OTUtables and our sample data.
+
+# Beyond the OTU Table
+
+`phyloseq` is an R package for efficient interactive and reproducible analyses of OTU-clustered high-throughput phylogenetic sequencing data. We can take the sequence variant table produced by `dada2` and use it, along with taxonomic classification and data about the samples, in these analyses. `Phyloseq` imports, stores, analyzes, and displays these data.
+
+In our last lesson we showed how to hand off data to `phyloseq` from `dada2`, using the `phyloseq` command to create a `phyloseq` object from an OTU table, a taxonomic table, and a sample dataset. 
+
+In this lesson we will some of the other functionality of `phyloseq`:
+
+- explore some of the example datasets that are included;
+- creating `phyloseq` objects from the output of other programs;
+- graphics in `phyloseq'.
+
+## Load Packages and Example Data
+
+To get started we will need to load both `phyloseq` and `ggplot2`.
+
+```{r}
+
+# Load packages
+
+library(phyloseq)
+packageVersion("phyloseq")
+library(ggplot2) 
+packageVersion("ggplot2")
+library(RColorBrewer)
+packageVersion("RColorBrewer")
+library("Biostrings")
+packageVersion("Biostrings")
+
+```
+
+Load example data using the `data()` command.
+
+```{r}
+
+# Load example data
+
+data(GlobalPatterns)
+data(esophagus)
+data(enterotype)
+data(soilrep)
+
+```
+
+You can try these examples using the `example()` command.
+
+```{r}
+
+# Use the example() command on the enterotype database
+
+example(enterotype, ask=FALSE)
+
+```
+
+You can also import data from other packages such as MG-RAST or QIIME. The newer versions of QIIME produce files formatted according to the *biom* standard (see [http://biom-format.org](http://biom-format.org)).
+
+The phyloseq package has small examples of biom files with different levels and organization of data. The following chunk illustrates how to import each of the 4 main types of biom files. Note that in practice you won't know what type your file is, so best to include all 4. In addition, the `import_biom` funciton allows you to import an associated phylogenetic tree file and reference sequence file (e.g., fasta file).
+
+To do this you must first define the file paths. For this example, this should be within the phyloseq package. Thus we use the `system.file` command to get the paths. 
+
+```{r}
+
+# Load the files
+rich_dense_biom  <- system.file("extdata", "rich_dense_otu_table.biom",  package="phyloseq")
+rich_sparse_biom <- system.file("extdata", "rich_sparse_otu_table.biom", package="phyloseq")
+min_dense_biom   <- system.file("extdata", "min_dense_otu_table.biom",   package="phyloseq")
+min_sparse_biom  <- system.file("extdata", "min_sparse_otu_table.biom",  package="phyloseq")
+treefilename <- system.file("extdata", "biom-tree.phy",  package="phyloseq")
+refseqfilename <- system.file("extdata", "biom-refseq.fasta",  package="phyloseq")
+
+```
+
+Next we use these paths as argments to the `import_biom` function. The tree and reference sequence files are both suitable for any of the biom file types, so we only need one path for each. 
+
+```{r}
+
+# Import via the paths
+
+import_biom(rich_dense_biom, treefilename, refseqfilename, parseFunction = parse_taxonomy_greengenes)
+
+import_biom(rich_sparse_biom, treefilename, refseqfilename, parseFunction = parse_taxonomy_greengenes)
+
+import_biom(min_dense_biom, treefilename, refseqfilename, parseFunction = parse_taxonomy_greengenes)
+
+import_biom(min_sparse_biom, treefilename, refseqfilename, parseFunction = parse_taxonomy_greengenes)
+
+```
+
+In practice you will store the result of your import as some variable name, like `myData`, then use this object in downstream analyses. For examples,
+
+```{r}
+
+# Example of storing results of import and manipulating it
+
+myData <- import_biom(rich_dense_biom, treefilename, refseqfilename, parseFunction = parse_taxonomy_greengenes)
+myData
+plot_tree(myData, color = "Genus", shape = "BODY_SITE", size = "abundance")
+plot_richness(myData, x="BODY_SITE", color="Description")
+plot_bar(myData, fill="Genus")
+refseq(myData)
+
+```
+
+
+The good people at `phyloseq` have also downloaded data from the Human Microbiome Project and made it available as an R dataset. 
+
+You can get to it by hitting the hotlink under "Alternatively, Download the Processed File from Us" on the following page: (https://joey711.github.io/phyloseq-demo/HMP_import_example.html)[https://joey711.github.io/phyloseq-demo/HMP_import_example.html]. Once you have downloaded this file, move it into your working directory. Don't know what your working directory is? Issue the command `getwd()` in the console window at the prompt, it will tell you. 
+
+Now, let's look at it
+
+```{r}
+# Get the HMP data
+# You will need to change your path
+
+load("HMPv35.Rdata")
+
+HMPv35
+```
+
+
+## Merge Data
+
+`phyloseq` supports two types of merging.
+
+1. You can merge OTUs or samples in a phyloseq object, based on a taxonomic or sample variable using the `merge_samples()` or `merge_taxa()` commands.
+2. YOu can merge two or more data objects from the same experiment so that their data become part of the same phyloseq object using the `merge_phyloseq()` commend.
+
+### Merging Samples
+
+Merging samples with `merge_samples()` can be a useful means of reducing noise or excess features, say by removing the individual effects between replicates or between samples for a particular explanatory variable. With `merge_samples()` the abundance values for the merged samples are summed.
+
+As an example, let's first remove unobserved OTUs (those that sum 0 across all samples) and add an explanatory variable with which to organize later in plots, using the GlobalPatterns dataset.
+
+```{r}
+
+# Remove empty samples
+
+GP <- GlobalPatterns
+GP <- prune_taxa(taxa_sums(GlobalPatterns) > 0, GlobalPatterns)
+humantypes <- c("Feces", "Mock", "Skin", "Tongue")
+sample_data(GP)$human <- get_variable(GP, "SampleType") %in% humantypes
+
+```
+
+Now on to merging samples:
+
+```{r}
+
+# Merge Samples
+
+mergedGP <- merge_samples(GP, "SampleType")
+SD <- merge_samples(sample_data(GP), "SampleType")
+print(SD[, "SampleType"])
+print(mergedGP)
+sample_names(GP)
+sample_names(mergedGP)
+identical(SD, sample_data(mergedGP))
+
+```
+
+The OTU abundances of merged samples are summed. Let's investigate this ourselves looking at just the top 10 most abundant OTUs.
+
+```{r}
+
+# Look at top 10 most abundant OTUs
+
+OTUnames10 <- names(sort(taxa_sums(GP), TRUE)[1:10])
+GP10 <- prune_taxa(OTUnames10, GP)
+mGP10 <- prune_taxa(OTUnames10,mergedGP)
+ocean_samples <- sample_names(subset(sample_data(GP), SampleType == "Ocean"))
+print(ocean_samples)
+otu_table(GP10)[, ocean_samples]
+rowSums(otu_table(GP10)[, ocean_samples])
+otu_table(mGP10)["Ocean", ]
+
+
+```
+
+Now let's look at the merge graphically between two richnes estimate summary plots. 
+
+```{r}
+
+# Richness estimate plots
+
+plot_richness(GP, "human", "SampleType", title="Unmerged")
+
+```
+
+The merge can do some weird things to samples variables, so let's re-add these variables to the `sample_data` before we plot.
+
+```{r}
+
+# Re-add sample data and plot richness plots again.
+
+sample_data(mergedGP)$SampleType <- sample_names(mergedGP)
+sample_data(mergedGP)$human <- sample_names(mergedGP) %in% humantypes
+plot_richness(mergedGP, "human", "SampleType", title="merged")
+
+```
+
+When we combine the abundances of non-replicate samples from the same environment, the estimates of absolute richness increase for each environment. But, more to the point, the new plot is easier to read and interpret, one of the reasons one might use the `merge_samples` function.
+
+### Merging Taxa
+
+One of the issues with microbial census data is that a fine-scaled definition for OTU may blur a pattern that might otherwise be evident if we considered a higher taxonomic rank. The best way to deal with this is to agglomerate phylogenetic tree tips or taxa by using the agglomeration functions `tip_glom` or `tax_glom`. Let's use the object we imported earlier from the biom format files, myData. First the original tree:
+
+```{r}
+
+# Plot phylogenetic tree of GlobalPatterns object
+plot_tree(GP, color="SampleType", sizebase=2, label.tips="taxa_name")
+```
+
+What a mess. Let's try using `merge_taxa` to merge the first 100 OTUs into one new OTU. The option 2 in the call means to combine the counts of these 100 OTUs into the index for the new OTU. 
+
+```{r}
+
+# Combine the tree tips and plot again
+
+x1 <- merge_taxa(GP, taxa_names(GP)[1:100], 2)
+plot_tree(x1, color="SampleType", sizebase=2, label.tips="taxa_name")
+
+```
+
+You can barely see the difference, but it is there.
+
+### Merging Objects 
+
+You can also merge phyloseq objects. We will demonstrate with a somewhat trivial example by extracting the components of the GlobalPatterns object and then building them back to the original form using the command `merge_phyloseq`.
+
+
+```{r}
+
+# Split apart GlobalPatterns
+
+data(GlobalPatterns)
+tree <- phy_tree(GlobalPatterns)
+tax <- tax_table(GlobalPatterns)
+otu <- otu_table(GlobalPatterns)
+sam <- sample_data(GlobalPatterns)
+
+# Create new phyloseq object
+
+otutax <- phyloseq(otu, tax)
+otutax
+
+```
+
+You can se that our new `otutax` object has just the OTU table and the taxonomy table. Let's use `merge_phyloseq` to build up the original `GlobalPatterns` object, and compare to make sure they are identical. 
+```{r}
+
+# Build back up
+
+GP2 = merge_phyloseq(otutax, sam, tree)
+
+# Test for identity
+
+identical(GP2, GlobalPatterns)
+
+```
+
+## Accessing and (Pre)Processing Data
+
+### Accessors
+
+We have already seen a bit above about how to access some of the data within a `phyloseq` object. We will comprehensively cover it now.
+
+Let's use the `GlobalPatterns` dataset.
+
+```{r}
+
+# Load data object and see what is there
+
+data("GlobalPatterns")
+GlobalPatterns
+ntaxa(GlobalPatterns)
+nsamples(GlobalPatterns)
+sample_names(GlobalPatterns)[1:5]
+rank_names(GlobalPatterns)
+sample_variables(GlobalPatterns)
+otu_table(GlobalPatterns)[1:5, 1:5]
+tax_table(GlobalPatterns)[1:5, 1:4]
+phy_tree(GlobalPatterns)
+taxa_names(GlobalPatterns)[1:10]
+myTaxa <- names(sort(taxa_sums(GlobalPatterns), decreasing = TRUE)[1:10])
+ex1 <- prune_taxa(myTaxa, GlobalPatterns)
+plot(phy_tree(ex1), show.node.label = TRUE)
+plot_tree(ex1, color = "SampleType", label.tips = "Phylum", ladderize = "left", justify = "left", size = "Abundance")
+
+
+
+```
+
+### Preprocessing
+
+`phyloseq` also includes functions for filtering, subsetting, and merging abundance data. Let's filter!
+
+#### Filtering
+
+Filtering is designed in a modular fashion. The functions `prune_taxa` and  `prune_samples` will directly remove unwanted indices. The functions `filterfun_sample` and `genefilter_sample` will allow you to build arbitrarily complex sample-wise filtering criteria. The function `filter_taxa` allows for taxa-wise filtering. 
+
+In the following example we will use the GlobalPatterns object again, first transforming it to relative abundance in a new `GPr` object, then filtering that object to remove all OTUs that have a mean abundance < $10^-5$, creating another new object. 
+
+```{r}
+
+# Create the object with the relative abundance data
+
+GPr <- transform_sample_counts(GlobalPatterns, function(x) x / sum(x))
+GPfr <- filter_taxa(GPr, function(x) mean(x) > 1e-5, TRUE)
+
+GlobalPatterns
+GPr
+GPfr
+
+```
+
+#### Subsetting
+
+We see that the final object, `GPfr` is highly subsetted containing just a little less than a quarter of the original OTUs (4624 / 19216).
+
+The functions `prune_sample` and `prune_taxa` are to be used in cases where the complete subset of OTUS or samples is directly available. Alternatively the `subsets_taxa` and `subset_samples` are best for subsetting based on other data contained in the taxonomy and sample datasets respectively. 
+
+As an example we will obtain the subset of the GlobalPatterns dataset that is part of the Chlamydiae phylum, then remove samples with less than 20 reads.
+
+```{r}
+
+# Subset for Chlamydiae
+
+GP.ch1 <- subset_taxa(GlobalPatterns, Phylum == "Chlamydiae")
+
+# Eliminate samples whose total reads are less than 20
+
+GP.ch1 <- prune_samples(sample_sums(GP.ch1) >= 20, GP.ch1)
+
+GP.ch1
+plot_tree(GP.ch1)
+
+```
+
+#### Merging
+
+Merging methods include `merge_taxa` and `merge_samples` for merging specific OTUs or samples, respectively. 
+
+The following chunk shows the merge of the first 5 OTUs in teh Chlamydiae-only dataset.
+
+```{r}
+
+# Merge first 5 OTUSs in Chlamydiae-only dataset
+
+GP.ch1.merged <- merge_taxa(GP.ch1, taxa_names(GP.ch1)[1:5])
+
+
+```
+
+Let's do one final set of preprocessing steps
+
+```{r}
+
+# Final preprocess for GlobalPatterns: filter out taxa not see more than 3 times in at least
+# 20% of samples
+
+GP <- filter_taxa(GlobalPatterns, function(x) sum(x > 3) > (0.2*length(x)), TRUE)
+
+# Define human v non-human and add to sample data:
+
+sample_data(GP)$human <- factor(get_variable(GP, "SampleType") %in% c("Feces", "Mock", "Skin", "Tongue"))
+
+# Standardize abundances to median sequencing depth
+
+total <- median(sample_sums(GP))
+standf <- function(x, t=total) round(t * (x / sum(x)))
+gps <- transform_sample_counts(GP, standf)
+
+# Filter out taxa with CV > 3.0
+
+gpsf <- filter_taxa(gps, function(x) sd(x) / mean(x) > 3.0, TRUE)
+
+# Subset to Bacteroidetes
+
+gpsfb <- subset_taxa(gpsf, Phylum == "Bacteroidetes")
+
+
+```
+
+### Graphical Display
+
+Let's graph this slice of data
+
+```{r}
+
+# Graph the slice of data
+
+# First a simple bar graph
+
+title = "plot_bar; Bacteroidetes-only"
+plot_bar(gpsfb, "SampleType", "Abundance", title = title)
+
+# Now colored by family
+
+plot_bar(gpsfb, "SampleType", "Abundance", "Family", title = title)
+
+# Now faceted with type of samples
+
+plot_bar(gpsfb, "Family", "Abundance", "Family", title = title, facet_grid = "SampleType~.")
+
+```
+
+You can also define your own graphics "from scratch" using  `psmelt` Here are two examples:
+
+```{r}
+
+# Example 1
+mdf <- psmelt(gpsfb)
+# Simple bar plot
+
+ggplot(mdf, aes(x=SampleType,
+                y=Abundance)) +
+  geom_bar(stat="identity", position = "stack", color="black")
+
+# Simple heat map
+
+ggplot(mdf, aes(x=SampleType,
+                y=OTU,
+                fill=Abundance)) +
+  geom_raster()
+
+```
+
+
+## Distance Functions
+
+The `distance` function takes a `phyloseq` object and a method and returns a `dist`-class distance object. Currently `phyloseq` supports 44 different method options. For the complete list, type `distanceMethodList`. Use the documentation on `distance` for further details.
+
+The usage is as follows:
+
+distance(phyloseq-object, method="methodname", type="type")
+
+Because this function organizes distance calculations into one function, it is easy to calculate all distance methods and investigate the results. We are going to do so on the `Enterotypes` dataset, then perform multidimensional scaling, plot the first two axes, shading and shaping the points in each plot according to sequencing technology and assigned "Enterotype" label.
+
+First some preliminaries, loading `plyr`, setting the `ggplot2` theme, and loading the dataset:
+
+```{r}
+
+# get plyr
+library(plyr)
+
+# set ggplot2 theme
+theme_set(theme_bw())
+
+# load enterotype data
+data(enterotype)
+
+```
+
+Some preliminary filtering to remove OTUs that have unassigned sequences ("-1"):
+
+```{r}
+
+# Remove unassigned OTUs
+
+enterotype <- subset_taxa(enterotype, Genus != "-1")
+
+```
+
+Let's see the available distance methods coded in `distance`:
+
+```{r}
+
+dist_methods <- unlist(distanceMethodList)
+print(dist_methods)
+
+```
+
+Remove distance methods that depend on a phylogenetic tree, because the `enterotype` object that we started with does not have one. These would be the two unifrac methods and DPCoA.
+
+```{r}
+
+# Remove methods that need a phylogenetic tree
+
+dist_methods[(1:3)]
+dist_methods <- dist_methods[-(1:3)]
+print(dist_methods)
+
+# This is the unser-defined method:
+
+dist_methods["designdist"]
+
+# Remove it
+
+dist_methods <- dist_methods[-which(dist_methods == "ANY")]
+print(dist_methods)
+
+```
+
+Now we can loop through this list, calculate distances according to each methods, plot the distances, and save each plot to a plist (`plist`).
+
+```{r}
+
+# Prepare to receive plots
+plist <- vector("list", length(dist_methods))
+names(plist) <- dist_methods
+
+for(i in dist_methods ){
+  # Calculate distance matrix
+  iDist <- phyloseq::distance(enterotype, method=i)
+  #Calculate ordination
+  iMDS <- ordinate(enterotype, "MDS", distance = iDist)
+  ## Make plot
+  # Don't carry over previous plot (if errror, p will be blank)
+  p <- NULL
+  # Create plot, store as temp variable p
+  p <- plot_ordination(enterotype, iMDS, color="SeqTech", shape="Enterotype")
+  # Add title to each plot
+  p <- p + ggtitle(paste("MDS using distance method ", i, sep=""))
+  # Save the graphic to file
+  plist[[i]] <- p
+}
+
+
+```
+
+## Combine Results
+
+Shade according to sequencing technology:
+
+```{r}
+# Shade according to sequencing technology:
+
+df <- ldply(plist, function(x) x$data)
+names(df)[1] <- "distance"
+p <- ggplot(df, aes(Axis.1, Axis.2, color=SeqTech, shape=Enterotype))
+p <- p + geom_point(size = 3, alpha = 0.5)
+p <- p + facet_wrap(~distance, scales="free")
+p <- p + ggtitle("MDS on various distance metrics for Enterotype dataset")
+p
+```
+
+Now, shade instead according to assigned Enterotype
+
+```{r}
+
+# Shade according to Enterotype:
+
+df <- ldply(plist, function(x) x$data)
+names(df)[1] <- "distance"
+p <- ggplot(df, aes(Axis.1, Axis.2, color=Enterotype, shape=SeqTech))
+p <- p + geom_point(size = 3, alpha = 0.5)
+p <- p + facet_wrap(~distance, scales="free")
+p <- p + ggtitle("MDS on various distance metrics for Enterotype dataset")
+p
+
+```
+
+### Compare Results
+
+Some selected examples among the created plots. First the Jensen-Shannon Divergence.
+
+```{r}
+
+# Plot ordination with Jensen-Shannon Divergence
+
+print(plist[["jsd"]])
+
+```
+
+Jaccard distance
+
+```{r}
+
+# Plot ordination with Jaccard distance
+
+print(plist[["jaccard"]])
+
+```
+
+Bray-Curtis
+
+```{r}
+# Plot ordination with Bray-Curtis
+
+print(plist[["bray"]])
+```
+
+Gower
+
+```{r}
+
+# Plot ordination with Gower
+
+print(plist[["gower"]])
+
+```
+
+
+w
+
+```{r}
+
+# Plot ordination with w
+
+print(plist[["w"]])
+
+```
+
+
+## Gap Statistic
+
+### How Many Clusters Are There?
+
+The `clusGap` function from the `cluster` package calculates a goodness of clustering measure, the "gap" statistic. For each number of clusters `k`, it compares W(k) with $E[W(k)]$ where the latter is defined by bootstrapping.
+
+Let's give this a try:
+
+#### First: Ordination
+
+Well, really, first, let's set things up, then ordinate:
+
+```{r}
+
+# Set up
+
+library(cluster)
+packageVersion("cluster")
+theme_set(theme_bw())
+data(enterotype)
+
+# Now ordinate
+exord <- ordinate(enterotype, method = "MDS", distance = "jsd")
+
+```
+
+#### Compute Gap Statistic
+
+```{r}
+
+# Compute gap statistic
+
+paml = function(x, k){list(cluster=pam(x,k, cluster.only = TRUE))}
+x = phyloseq:::scores.pcoa(exord, distplay="sites")
+gskmn = clusGap(x[,1:2], FUN=paml, K.max = 6, B=50)
+gskmn
+
+```
+
+#### Plot Results
+
+Define a plot method for results
+
+```{r}
+
+# Define plot method
+
+plot_glusgap <- function(clusgap, title="Gap Statistic calculation results"){
+  require("ggplot2")
+  gstab <- data.frame(clusgap$Tab, k=1:nrow(clusgap$Tab))
+  p <- ggplot(gstab, aes(k, gap)) + geom_line() + geom_point(size=5)
+  p <- p + geom_errorbar(aes(ymax = gap+SE.sim, ymin = gap - SE.sim))
+  p <- p + ggtitle(title)
+  return(p)
+}
+
+# Define a wrapper function
+
+gap_statistic_ordination <- function(ord, FUNcluster, type="sites", K.max=6, axes=c(1:2), B=500, verbose=interactive(), ...){
+    require("cluster")
+    #   If "paml" was chosen, use this internally defined call to pam
+    if(FUNcluster == "paml"){
+        FUNcluster = function(x,k) list(cluster = pam(x, k, cluster.only=TRUE))     
+    }
+    # Use the scores function to get the ordination coordinates
+    x = phyloseq:::scores.pcoa(ord, display=type)
+    #   If axes not explicitly defined (NULL), then use all of them
+    if(is.null(axes)){axes = 1:ncol(x)}
+    #   Finally, perform, and return, the gap statistic calculation using cluster::clusGap  
+    clusGap(x[, axes], FUN=FUNcluster, K.max=K.max, B=B, verbose=verbose, ...)
+}
+
+
+```
+
+Now try out this function
+
+```{r}
+# Make the plot
+
+gs <- gap_statistic_ordination(exord, "paml", B=50, verbose = FALSE)
+print(gs, method="Tibs2001SEmax")
+plot_clusgap(gs)
+
+```
+
+For comparison, let's see what happens if we only use plotting as available in `base` R:
+
+```{r}
+
+# Base R plotting
+
+plot(gs, main = "Gap statistic for the 'Enterotypes' data")
+mtext("Looks like 4 clusters is best, with 3 and 5 as close runners-up")
+
+```
+
+
+## Ordination Plots
+
+We want to filter low-occurrence, poorly-represented OTUs from these data, because they are essentially noise variables for purposes of this lesson. In practice, you should probably perform clearly-document well-justified pre-processing steps.
+
+First we want to remove OTUs that do not appear more than 5 times in more than half the samples.
+
+```{r}
+
+# Remove OTUs that don't appear more than 5 times in more than half the samples
+
+GP <- GlobalPatterns
+wh0 <- genefilter_sample(GP, filterfun_sample(function(x) x>5), A = 0.5*nsamples(GP))
+GP1 <- prune_taxa(wh0, GP)
+
+```
+
+Transform to an even sampling depth.
+
+```{r}
+
+# Transform to an even sampling depth
+
+GP1 <- transform_sample_counts(GP1, function(x) 1e6 * x/sum(x))
+
+```
+
+Keep only the 5 most abundant phyla.
+
+```{r}
+
+# Keep the top 5 most abundant phyla  
+
+phylum.sum <- tapply(taxa_sums(GP1), tax_table(GP1)[, "Phylum"], sum, na.rm = TRUE)
+top5phyla <- names(sort(phylum.sum, TRUE))[1:5]
+GP1 <- prune_taxa((tax_table(GP1)[, "Phylum"] %in% top5phyla), GP1)
+summary(GP1)
+GP1
+
+
+```
+
+So we still have 204 taxa that are in the dataset `GP1` that we will use going forward.
+
+We will want to investigate human-associated microbiomes vs not, so we will define as follows:
+
+```{r}
+
+# Define human-associate samples
+human <- get_variable(GP1, "SampleType") %in% c("Feces", "Mock", "Skin", "Tongue")
+sample_data(GP1)$human <- factor(human)
+
+```
+
+### Four Main Types of Ordination Plots
+
+There are four basic representations of an ordination. 
+
+#### Just OTUs
+
+Let's plot just the OTUs and shade by Phylum. Remember there will `ntaxa(GP1)` = 204 OTUs in this plot.
+
+```{r}
+
+# Plot ordination for just OTUs
+
+GP.ord <- ordinate(GP1, "NMDS", "bray")
+p1 <- plot_ordination(GP1, GP.ord, type="taxa", color="Phylum", title = "taxa")
+print(p1)
+
+```
+
+There is a lot going on here, and a lot of points are superimposed on one another. One way to deal with that is to use facetting.
+
+```{r}
+
+# Facet-wrapping for previous plot
+
+p1 + facet_wrap(~Phylum, 3)
+
+```
+
+#### Just Samples
+
+Another way to plot is to consider the samples, and shade by "SampleType", modifying shape according to if they are human associated.
+
+```{r}
+
+# Plot just the Samples
+
+p2 <- plot_ordination(GP1, GP.ord, type="samples", color="SampleType", shape="human")
+p2 + geom_polygon(aes(fill=SampleType)) +
+  geom_point(size=5) +
+  ggtitle("samples")
+
+
+```
+
+#### Biplot Graphic of OTUs and Samples Together
+
+The `plot_ordination` function can also automatically create two different graphic layouts in which both the sampels and OTUs are plotted together in one "biplot". This will not work for methods that are intrinsically samples-only ordinations (e.g., UniFrac/PCoA).
+
+```{r}
+
+# Biplot Graph
+
+p3 <- plot_ordination(GP1, GP.ord, type="biplot", color="SampleType", shape="Phylum", title = "biplot")
+ # The following will modify the automatic shape scale
+GP1.shape.names <- get_taxa_unique(GP1, "Phylum")
+GP1.shapes <- 15:(15 + length(GP1.shape.names) - 1)
+names(GP1.shapes) <- GP1.shape.names
+GP1.shapes["samples"] <- 16
+
+p3 + scale_shape_manual(values=GP1.shapes)
+
+```
+
+#### Split Graphic
+
+We have the same problem as before, with a lot of overlay that might obscure meanint. Let's try to separate into side-by-side panels.
+
+```{r}
+
+# Split graphic into panels
+
+p4 <- plot_ordination(GP1, GP.ord, type="split", color="Phylum", shape = "human", label = "SampleType", title = "split")
+p4
+
+```
+
+
+### Ordination Methods
+
+Now we are going o loop through different `method` parameter options to the `plot_ordination` function, store the plot results, then plot in a combined graphic.
+
+```{r}
+
+# First use different ordination methods and plot to list
+
+dist <- "bray"
+ord_meths <- c("DCA", "CCA", "RDA", "DPCoA", "NMDS", "MDS", "PCoA")
+plist <- llply(as.list(ord_meths), function(i, physeq, dist){
+  ordi <- ordinate(physeq, method=i, distance = dist)
+  plot_ordination(physeq, ordi, "samples", color="SampleType")
+}, GP1, dist)
+names(plist) <- ord_meths
+
+```
+
+Now we will extract the data from each of the individual plots and put them back together in one big data.frame suitable for including all plots in one graphic.
+```{r}
+
+# Extract data from each of the individual plots and put them all together in one big dataframe
+
+pdataframe <- ldply(plist, function(x){
+  df <- x$data[, 1:2]
+  colnames(df) <- c("Axis_1", "Axis_2")
+  return(cbind(df, x$data))
+})
+
+names(pdataframe)[1] <- "method"
+
+```
+
+Now with all ordination results combined in one dataframe, called `pdataframe`, we can make a standard faceted scatterplot with ggplot2.
+
+```{r}
+
+# Make faceted scatterplot
+
+p <- ggplot(pdataframe, aes(Axis_1, Axis_2, color = SampleType, shape=human, fill=SampleType))
+p <- p + geom_point(size=4) +
+          geom_polygon()
+p <- p + facet_wrap(~method, scales="free")
+p <- p + scale_fill_brewer(type="qual", palette = "Set1")
+p <- p + scale_colour_brewer(type="qual", palette = "Set1")
+p
+
+
+```
+
+If you want t larger version of an individual plot, print from the original `plist` from which the `pdataframe` was mde. For instance plot the detrended correspondence analysis (DCA), which is the second element of the list.
+
+```{r}
+
+# Print DCA from original plist
+
+
+plist[[2]]
+```
+
+Make it look nicer.
+
+```{r}
+
+#Fluff it up
+
+p <- plist[[2]] + scale_colour_brewer(type="qual", palette = "Set1")
+p <- p + scale_fill_brewer(type="qual", palette = "Set1")
+p <- p + geom_point(size = 5) +
+         geom_polygon(aes(fill=SampleType))
+p
+
+```
+
+#### PCoA on UniFrac Distances
+
+You can also do PCoA on UniFrac distances
+
+Use the `ordinate` function to perform weighted UniFrac then perform PCoA on the distance matrix. Then pass the data and the ordination results to `plot_ordination` to create the `ggplot2` graphic withe default settings.
+
+```{r}
+
+# get unifrac distances and pcoa them
+
+ordu <- ordinate(GP1, "PCoA", "unifrac", weighted=TRUE)
+
+# plot it
+
+plot_ordination(GP1, ordu, color="SampleType", shape = "human")
+
+```
+
+Let's pretty it up.
+
+```{r}
+
+# Fluff up the graph
+
+p <- plot_ordination(GP1, ordu, color="SampleType", shape="human")
+p <- p + geom_point(size=7) 
+p <- p + scale_colour_brewer(type="qual", palette = "Set1")
+p + ggtitle("MDS/PCoA on weighted UniFrac distance, Global Patterns dataset")
+
+```
+
+## Alpha Diversity Graphics
+
+Although the command is to the `plot_richness` function, the function in fact calculates to more than to richness, in fact to all descriptions of alpha diversity. 
+
+First some setup
+
+```{r}
+
+# Some setup for graphics
+
+theme_set(theme_bw())
+pal <- "Set1"
+scale_colour_discrete <-  function(palname=pal, ...){
+  scale_colour_brewer(palette=palname, ...)
+}
+scale_fill_discrete <-  function(palname=pal, ...){
+  scale_fill_brewer(palette=palname, ...)
+}
+
+
+```
+
+
+### Prepare the Data
+
+It is probably not a bad idea to prune OTUs that are not present in any of the samples (somehow that happens) but _don't trim more than that!_ Many richness estimates are modeled on singletons and doubletons, and you need to leave them in the dataset to get meaningful estimates.
+
+```{r}
+
+# Prune off species = 0 across all samples
+
+GP <- prune_taxa(taxa_sums(GlobalPatterns) > 0, GlobalPatterns)
+
+```
+
+### Plot Examples
+
+#### The Default Graphic
+
+The `plot_richness` function produces the default graphic. Let's look at the `GP` example dataset.
+
+```{r}
+
+# Default plot
+
+plot_richness(GP)
+
+```
+
+We can, of course, just select a couple of measures to plot.
+
+```{r}
+
+# Plot only Chao1, Shannon
+
+plot_richness(GP, measures = c("Chao1", "Shannon"))
+
+```
+
+We can also specify a sample variable on which to organize the samples along the x-axis. An experimentally meaningful categorical variable is usually a good choice.
+
+```{r}
+
+# Plot only Chao1, Shannon
+
+plot_richness(GP, x="SampleType", measures = c("Chao1", "Shannon"))
+
+```
+
+Suppose we wanted to organize around an external variable that is not in the dataset already. As an example, think of a variable indicating if the sample was human or not. Let's define that variable first.
+
+```{r}
+
+# Create indicator variable if sample is human or not. 
+
+sample_data(GP)$human <- get_variable(GP, "SampleType") %in% c("Feces", "Mock", "Skin", "Tongue")
+
+```
+
+Now we tell `plot_richness` to map the new human variable on the x-axis, and shaade the points in different color groups accoring to SampleType.
+
+```{r}
+
+# Use indicator for human as x-axis, shade according to sample type
+
+plot_richness(GP, x="human", color="SampleType", measures = c("Chao1", "Shannon"))
+
+```
+
+We can merge samples that are from the environment (SampleType) and make the points bigger with `ggplot2`. First, merge samples.
+
+```{r}
+
+# Merge samples
+
+GPst <- merge_samples(GP, "SampleType")
+
+# Repair variables damaged during merge (coerced to numeric)
+sample_data(GPst)$SampleType <- factor(sample_names(GPst))
+sample_data(GPst)$human <- as.logical(sample_data(GPst)$human)
+
+```
+
+Now to plot
+
+```{r}
+
+p <- plot_richness(GPst, x="human", color="SampleType", measures = c("Chao1", "Shannon"))
+p <- p + geom_point(size=5, alpha=0.7)
+p
+
+```
+
+
+## Tree Graphics
+
+The `phyloseq` package also has powerful graphics for displaying and manipulating phylogenetic trees with the `plot_tree` function.
+
+
+### Example
+
+We want to plot trees, but we notice that the node labels for the GlobalPatterns dataset are, well, strange. Here they are:
+
+```{r}
+# Node labels for phylogenetic tree of GlobalPatterns
+
+head(phy_tree(GlobalPatterns)$node.label, 10)
+```
+
+These might be bootstrap values, but what is with the two decimals?
+
+Let's just take the first 4 characters.
+
+```{r}
+
+# Take first 4 characters of labels
+
+phy_tree(GlobalPatterns)$node.label <- substr(phy_tree(GlobalPatterns)$node.label, 1, 4)
+head(phy_tree(GlobalPatterns)$node.label)
+
+```
+
+Much better, these look like bootstrap values now.
+
+The dataset has many OTUs, more than will fit nicely on a tree graphic.
+
+```{r}
+
+# Number of taxa in dataset
+
+ntaxa(GlobalPatterns)
+
+```
+
+Let's arbitarily prune to the first 50 OTUs in the dataset and store.
+
+```{r}
+
+# Prune to first 50 OTUs
+
+physeq <- prune_taxa(taxa_names(GlobalPatterns)[1:50], GlobalPatterns)
+
+
+```
+
+If we just use the default `plot_tree` setting, look at what we get with this pruned tree.
+
+```{r}
+
+# Plot the tree
+
+plot_tree(physeq)
+
+```
+
+Kind of ugly. We can do beter.
+
+The black dots next to the tips are one for each sample in which that OTU was observed. Some have more dots than others. The node labels are also next to the tips, making everything pretty messy. How can we clean this up?
+
+First a tree with labels only.
+
+```{r}
+
+# Plot tree, no points
+
+plot_tree(physeq, "treeonly")
+
+```
+
+What about without the labels?
+
+```{r}
+
+# Plot with no points and no labels
+
+plot_tree(physeq, "treeonly", nodeplotblank)
+
+```
+
+We can adjust the way the branches are rotated to improve the looks using the `ladderize` parameter.
+
+```{r}
+
+# Ladderize the tree above
+
+plot_tree(physeq, "treeonly", nodeplotblank, ladderize="left")
+plot_tree(physeq, "treeonly", nodeplotblank, ladderize = TRUE)
+
+```
+
+Now let's add the OTU labels back to the tips?
+
+```{r}
+
+# Add tip labels back to tree above
+
+plot_tree(physeq, nodelabf=nodeplotblank, label.tips="taxa_names", ladderize="left")
+
+```
+
+Whoa, we also added back the points. Let's take those away.
+
+```{r}
+
+# Tree above with labels, without points
+
+plot_tree(physeq, "anythingelse")
+
+```
+
+
+### Mapping Variables in Data
+
+For the default argument to the method parameter, "sampledodge", a point is added next to each OTU tip for every sample in which that OTU was observed. Now we can add aesthetics to these points.
+
+#### Add Color
+
+Let's map color to the type of sample collected (location)
+
+```{r}
+
+# Map color to type of sample collected
+
+plot_tree(physeq, nodelabf = nodeplotboot(), ladderize = "left", color = "SampleType")
+
+```
+
+Or we can color according to the taxonomic level of Class
+
+```{r}
+
+# Color according to taxonomic Class
+
+plot_tree(physeq, nodelabf = nodeplotboot(), ladderize = "left", color = "Class")
+
+
+```
+
+#### Shape
+
+We can also map to a point shape if the variable has 6 or less categories, even when color is also mapped. Let's add point shape to indicate taxonomic Class while color indicates SampleType.
+
+```{r}
+
+# add shape to points
+
+plot_tree(physeq, nodelabf = nodeplotboot(), ladderize = "left", color = "SampleType", shape = "Class")
+
+```
+
+### Radial Tree 
+
+Making a radial tree is surprisingly easy with `ggplot2`, as long as you remember that our vertically oriented tree is a cartesian mapping of the data to a graphic. A radial tree is the same mapping, but with polar, instead of cartesian, coordinates. To wit
+
+```{r}
+# Make radial phylogenetic tree for esophagus dataset
+
+data (esophagus)
+plot_tree(esophagus, color = "Sample", ladderize = "left") + coord_polar(theta = "y")
+
+
+```
+
+We can make a more elaborate tree with the GlobalPatterns dataset, but will need to do some preliminary loading and trimming.
+
+```{r}
+
+# Make radial tree for GlobalPatterns
+
+plot_tree(physeq, nodelabf = nodeplotboot(60, 60, 3), color = "SampleType", shape = "Class", ladderize = "left") + coord_polar(theta = "y")
+
+```
+
+#### More Examples with the Esophagus Dataset 
+
+The Esophagus dataset is really simple - just 3 samples, no sample data, and a modest amount of sequencing per sample. 
+
+Let's look at the default tree
+
+```{r}
+
+# Default tree for Esophagus dataset
+
+plot_tree(esophagus, title="Default Tree.")
+
+```
+
+If you want an unadorned tree, the `treeonly` method can be used. 
+
+```{r}
+
+# Simplest tree
+
+plot_tree(esophagus, "treeonly", title="method = \"treeonly\"")
+
+```
+
+Shading tips where OTUs are observed:
+
+```{r}
+
+# Shade tips where OTUs are observed
+
+plot_tree(esophagus, color="samples")
+
+```
+
+Scale the tips according to abundance.
+
+```{r}
+
+# Scale tips by abundance
+
+plot_tree(esophagus, size="abundance")
+
+```
+
+Color and scale on the same tree!
+
+```{r}
+
+# Shade tips where OTUs are observed
+
+plot_tree(esophagus, color="samples", size = "abundance")
+
+```
+
+Oh my!
+
+There is some overlap of tip points. Let's see if we can adjust spacing to spread them out a bit.
+
+```{r}
+
+# Shade tips where OTUs are observed
+
+plot_tree(esophagus, color="samples", size = "abundance", base.spacing = 0.03)
+
+```
+
+Can we display the actual numeric value of abundances that occurred 3 or more times in a sample?
+
+```{r}
+
+# Shade tips where OTUs are observed
+
+plot_tree(esophagus, color="samples", size = "abundance", base.spacing = 0.03, min.abundance = 3)
+
+```
+
+#### More Examples with GlobalPatterns Dataset
+
+Let's subset the GlobalPatterns dataset to just the observed Archaea.
+
+```{r}
+
+# Subset GlobalPatterns to just Archaea
+
+gpa <- subset_taxa(GlobalPatterns, Kingdom == "Archaea")
+ntaxa(gpa)
+
+```
+
+The number of taxa is small enough for a decent tree plot.
+
+Too many OTUs means a tree that is pointless to displa in its entirety in one graphic of a standard size and font. So the whole GlobalPatterns dataset is probably a bad idea.
+
+```{r}
+# Number of taxa in GlobalPatterns dataset
+
+ntaxa(GlobalPatterns)
+```
+
+Let's look at the basic tree with just a minimal set of parameter choices.
+
+```{r}
+
+# Almost minimal trees for GlobalPatterns Archaea subset
+
+plot_tree(gpa, color = "SampleType")
+plot_tree(gpa, color = "Phylum")
+plot_tree(gpa, color = "SampleType", shape = "Phylum")
+plot_tree(gpa, color = "Phylum", label.tips = "Genus")
+
+```
+
+These ~200 taxa still make for a crowded graphic. So let's subset further to just the Crenarcheota.
+
+```{r}
+
+# Trees for just Crenarchaeota
+
+gpac <- subset_taxa(gpa, Phylum=="Crenarchaeota")
+plot_tree(gpac, color="SampleType", shape="Genus")
+plot_tree(gpac, color = "SampleType", label.tips = "Genus")
+
+```
+
+Add some abundance information, then spread it out:
+
+```{r}
+
+# Add abundance inforamtion then spread it out
+
+plot_tree(gpac, color="SampleType", shape="Genus", size="abundance", plot.margin=0.4)
+plot_tree(gpac, nodelabf=nodeplotblank, color="SampleType", shape="Genus", size="abundance", base.spacing=0.04, plot.margin=0.4)
+
+```
+
+#### Chlamydiae-only Tree
+
+Let's use some of these same techniquest with the Chlamydiae-only tree that we had created earlier.
+
+```{r}
+
+# Create Chlamydiae-only tree and plot again
+
+gp.ch <- subset_taxa(GlobalPatterns, Phylum=="Chlamydiae")
+plot_tree(gp.ch, color="SampleType", shape="Family", label.tips="Genus", size="abundance", plot.margin=0.6)
+
+```
+
+## Bar Plots
+
+Let's start again with the Chlamydiae-only subset of GlobalPatterns, and look at the basic bar plot.
+
+```{r}
+
+# Basic plots with Chlamydiae subset
+
+plot_bar(gp.ch)
+
+```
+
+Add some fill color to represent the Genus to which the OTUs belong
+
+```{r}
+
+# Add fill color for Genus to basic bar plot
+
+plot_bar(gp.ch, fill = "Genus")
+
+```
+
+Keep same fill color, but group by SampleType.
+
+```{r}
+
+# Add fill color for Genus to basic bar plot
+
+plot_bar(gp.ch, fill = "Genus", x = "SampleType")
+
+```
+
+### Jazz It Up with Facets
+
+Organize further with facets, graphing the Families faceted by SampleType and filled by Genus.
+
+```{r}
+
+# Add fill color for Genus to basic bar plot
+
+plot_bar(gp.ch, "Family", fill = "Genus", facet_grid = ~SampleType)
+
+```
+
+Even fancier by adding a layer of jittered points.
+
+```{r}
+
+# Add a layer of jittered points
+
+p = plot_bar(gp.ch, "Family", fill="Genus", facet_grid=~SampleType)
+p + geom_point(aes(x=Family, y=Abundance), color="black", position="jitter", size=3)
+
+```
+
+### Enterotype Dataset
+
+Let's first trim to the 10 most abundant genera.
+
+```{r}
+
+TopNOTUs <- names(sort(taxa_sums(enterotype), TRUE)[1:10])
+ent10   <- prune_taxa(TopNOTUs, enterotype)
+
+```
+
+The settings in the following R-chunk were chosen after trial-and-error, looking to show off certain features of the data to the best advantage.
+
+```{r}
+
+# Bar graph for Enterotype to look at sequencing technology v genus detection
+
+plot_bar(ent10, "SeqTech", fill="Enterotype", facet_grid = ~Genus)
+
+```
+
+You could of course opt instead to separate enterotype designation and genus designation:
+
+```{r}
+
+# Separate into finer grid
+
+plot_bar(ent10, "Genus", fill="Genus", facet_grid = SeqTech~Enterotype)
+
+```
+
+We can remove those OTU separation lines as follows:
+
+```{r}
+
+# Separate into finer grid
+
+p <- plot_bar(ent10, "Genus", fill="Genus", facet_grid = SeqTech~Enterotype)
+p + geom_bar(aes(color=Genus, fill=Genus), stat="identity", position="stack")
+
+```
+
+## Heatmap Plots
+
+You can also create heatmaps using ordination methods to organize rows and columns instead of hierarchical clustering. Such an organization typically makes a more interpretable display. Lucky for us we can do all of this within `phyloseq`!
+
+Traditionally heatmaps have been used to emphasize data that is above or below a threshold as "hot" or "cold" respectively. But when used with OTU abundance data, the need is to see the relative patterns of high abundance OTUs against a background of low abundance or absent groups. Thus the default color scheme is dark blue (low abundance) to very light blue for highest abundance, with black representing missing or zero abundance values. Thus you can change the color scheme by changing the `low`, `high`, and `na.value` arguments. 
+
+### Plot a 300-taxa Dataset
+
+et's get the top 300 most abundant Bacteria taxa across all samples in the GlobalPatterns dataset and plot a heatmap. Quick and dirty.
+
+```{r}
+
+# Get top 300 most abundant Bacteria taxa in GlobalPatterns
+
+gpt <- subset_taxa(GlobalPatterns, Kingdom=="Bacteria")
+gpt <- prune_taxa(names(sort(taxa_sums(gpt),TRUE)[1:300]), gpt)
+
+# Plot the heatmap
+
+plot_heatmap(gpt, sample.label="SampleType")
+
+```
+
+This is kind of noisy. Let's deal with something a bit more manageable, like the Crenarchaeota phylum of Archaea, which we created above as gpac. Now the default heatmap
+
+```{r}
+
+# Default heatmap for Crenarchaeota
+
+plot_heatmap(gpac)
+
+```
+
+Re-label by a sample variable and taxonomic family.
+
+```{r}
+
+# Re-label and SampleType and Family
+
+p <- plot_heatmap(gpac, "NMDS", "bray", "SampleType", "Family")
+p
+
+```
+
+And if you wanted axis lables but not hte labels on individual features?
+
+```{r}
+
+# Relabel
+
+p$scales$scales[[1]]$name <- "My X-Axis"
+p$scales$scales[[2]]$name <- "My Y-Axis"
+print(p)
+
+```
+
+How about a different color scheme?
+
+```{r}
+
+plot_heatmap(gpac, "NMDS", "bray", "SampleType", "Family", low="#000033", high="#CCFF66")
+
+```
+
+Or a very dark blue to red scheme:
+
+```{r}
+
+plot_heatmap(gpac, "NMDS", "bray", "SampleType", "Family", low="#000033", high="#FF3300")
+
+```
+
+Dark blue to light blue:
+
+```{r}
+
+plot_heatmap(gpac, "NMDS", "bray", "SampleType", "Family", low="#000033", high="#66CCFF")
+
+```
+
+Here is a "dark on light" color scheme, with the white value for NA and 0 elements.
+
+```{r}
+
+plot_heatmap(gpac, "NMDS", "bray", "SampleType", "Family", low="#66CCFF", high="#000033", na.value = "white")
+
+```
+
+A somewhat similar color scheme to that above, but now the "near-zero" color is close to a cream color and the colors themselves closer to grey. Better contrast overall, but more subtle in a way, not as exciting.
+
+```{r}
+
+plot_heatmap(gpac, "NMDS", "bray", "SampleType", "Family", low="#FFFFCC", high="#000033", na.value = "white")
+
+```
+
+Now let's try with different distances, different ordination methods
+
+First the default heatmap with NMDS ordination on the jaccard distance.
+
+```{r}
+
+plot_heatmap(gpac, "NMDS", "jaccard")
+
+```
+
+Detrended correspondence analysis.
+
+```{r}
+
+plot_heatmap(gpac, "DCA", "none", "SampleType", "Family")
+
+```
+
+Unconstrained redundancy analysis (PCA by any other name)
+
+```{r}
+
+plot_heatmap(gpac, "RDA", "none", "SampleType", "Family")
+
+```
+
+PCoA/MDS on the (default) Bray-Curtis distance.
+
+```{r}
+
+plot_heatmap(gpac, "PCoA", "bray", "SampleType", "Family")
+
+```
+
+PCoA/MDS on unweighted UniFrac distance
+
+```{r}
+
+plot_heatmap(gpac, "PCoA", "unifrac", "SampleType", "Family")
+
+```
+
+Same as above but with weighted UniFrac.
+
+```{r}
+
+plot_heatmap(gpac, "PCoA", "unifrac", "SampleType", "Family", weighted=TRUE)
+
+```
+
+And finally, just the regular heatmap produced by base-R graphics with a hierarchical clustering. Just in case you wanted to compare with `plot_heatmap`. Because I know you want to.
+
+```{r}
+
+heatmap(otu_table(gpac))
+
+```
+
+## Plot Microbiome Network
+
+There is a random element to network layout methods. So we want this to be reproducible, so we will set the random number generator seed explicitly:
+
+```{r}
+
+# Set the seed
+
+set.seed(711L)
+
+```
+
+We are going to work first with the Enterotype dataset. We will first want to remove the 9 samples for which no enterotype designation was assigned. 
+
+```{r}
+
+# Remove samples with no enterotype designation
+
+enterotype <- subset_samples(enterotype, !is.na(Enterotype))
+
+```
+
+We are going to create a network of samples in this dataset, connecting two samples when a distance between them is below some threshold. 
+
+Let's plot first with the default settings.
+
+```{r}
+
+# Default microbiome network plot
+
+plot_net(enterotype, maxdist = 0.4, point_label="Sample_ID")
+
+```
+
+What do you notice here, other than a big mess?
+
+Well there are two subgraphs that make up the majority of samples.
+
+Let's use some color to see about aspects of the network.
+
+```{r}
+
+# Exercise some options
+
+plot_net(enterotype, maxdist = 0.3, color="SeqTech", shape="Enterotype")
+
+```
+
+What do you notice now?
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
